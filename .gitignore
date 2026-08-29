@@ -14,3 +14,8 @@ runs/
 __pycache__/
 *.pyc
 .DS_Store
+
+Sample_video/
+*.mp4
+*.avi
+*.mkv
