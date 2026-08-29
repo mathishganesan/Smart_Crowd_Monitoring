@@ -1,3 +1,4 @@
+import os
 import torch
 from ultralytics import YOLO
 
@@ -10,20 +11,25 @@ def start_training():
         print(f"[INFO] CUDA Active! Training on GPU: {torch.cuda.get_device_name(0)}")
         device = 0
 
-    # Load base model (use 'yolov10n.pt' for Nano or 'yolov10s.pt' for Small)
+    # Explicit path to data.yaml
+    data_yaml_path = r"B:\Mini_Project\Smart_Crowd_Monitoring\dataset\data.yaml"
+
+    print(f"[INFO] Using dataset configuration from: {data_yaml_path}")
+
+    # Load base YOLOv10 model weights (use 'yolov10n.pt' or 'yolov10s.pt')
     model = YOLO("yolov10n.pt")
 
     print("[INFO] Starting YOLOv10 fine-tuning on custom dataset...")
     
-    # Run fine-tuning process
+    # Run fine-tuning
     results = model.train(
-        data="data.yaml",
-        epochs=30,           # 30-50 epochs recommended
-        imgsz=640,           # Input image resolution
-        batch=16,            # Optimized for 4GB VRAM (drop to 8 if OOM occurs)
+        data=data_yaml_path,
+        epochs=30,
+        imgsz=640,
+        batch=16,
         device=device,
         workers=2,
-        amp=True,            # Mixed precision FP16 (faster & lower VRAM)
+        amp=True,
         name="yolov10_head_monitoring",
         project="runs/detect",
         save=True

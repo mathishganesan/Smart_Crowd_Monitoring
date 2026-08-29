@@ -1,91 +1,107 @@
-import time
 import cv2
+import time
+import torch
+import numpy as np
 from ultralytics import YOLO
 
 class CrowdDetector:
-    def __init__(self, model_path="yolov10n.pt", conf_threshold=0.35, target_classes=[0], warning_limit=3, danger_limit=6):
-        print(f"[INFO] Initializing YOLOv10 Engine from '{model_path}'...")
-        self.model = YOLO(model_path)
-        self.conf_threshold = conf_threshold
-        self.target_classes = target_classes
+    def __init__(self, 
+                 model_path=r"runs/detect/runs/detect/yolov10_head_monitoring-6/weights/best.pt", 
+                 conf_threshold=0.35, 
+                 warning_limit=3, 
+                 danger_limit=6):
         
-        # Density Threshold Limits
+        # Select device
+        self.device = 0 if torch.cuda.is_available() else 'cpu'
+        print(f"[INFO] Initializing CrowdDetector on device: {self.device}")
+        
+        # Load model weights
+        self.model = YOLO(model_path)
+        
+        # Configurable thresholds
+        self.conf_threshold = conf_threshold
         self.warning_limit = warning_limit
         self.danger_limit = danger_limit
         
-        # Performance optimization variables
-        self.frame_counter = 0
-        self.skip_frames = 3
-        self.cached_boxes = []
-        self.cached_count = 0
-
-        # Smooth FPS tracking
+        # EMA metrics tracking
         self.prev_time = time.time()
-        self.fps = 0.0
+        self.fps_smoothed = 0.0
+        self.alpha = 0.1  # Smoothing factor
 
-    def get_density_status(self, count):
-        if count >= self.danger_limit:
-            return "DANGER", (0, 0, 255)       # Red (BGR)
-        elif count >= self.warning_limit:
-            return "WARNING", (0, 255, 255)    # Yellow (BGR)
+    def classify_density(self, count):
+        """Dynamic 3-tier safety classification logic"""
+        if count < self.warning_limit:
+            return "NORMAL", (0, 255, 0)       # Green
+        elif self.warning_limit <= count < self.danger_limit:
+            return "WARNING", (0, 215, 255)    # Yellow / Amber
         else:
-            return "NORMAL", (0, 255, 0)       # Green (BGR)
+            return "DANGER", (0, 0, 255)       # Red
 
     def process_frame(self, frame):
-        current_time = time.time()
-        time_diff = current_time - self.prev_time
-        self.prev_time = current_time
+        # 1. Temporal latency calculation
+        curr_time = time.time()
+        fps = 1.0 / max(curr_time - self.prev_time, 1e-5)
+        self.prev_time = curr_time
+        self.fps_smoothed = (self.alpha * fps) + ((1.0 - self.alpha) * self.fps_smoothed)
 
-        if time_diff > 0:
-            instant_fps = 1.0 / time_diff
-            self.fps = 0.85 * self.fps + 0.15 * instant_fps if self.fps > 0 else instant_fps
+        # 2. Downsample for faster streaming throughput
+        h, w = frame.shape[:2]
+        target_w = 640
+        target_h = int((target_w / w) * h)
+        resized_frame = cv2.resize(frame, (target_w, target_h))
 
-        self.frame_counter += 1
+        # 3. GPU-accelerated head inference
+        t_start = time.time()
+        results = self.model.predict(
+            source=resized_frame,
+            conf=self.conf_threshold,
+            device=self.device,
+            verbose=False
+        )[0]
+        inference_time_ms = (time.time() - t_start) * 1000.0
 
-        height, width = frame.shape[:2]
-        if width > 640:
-            target_width = 640
-            target_height = int(height * (640 / width))
-            frame = cv2.resize(frame, (target_width, target_height), interpolation=cv2.INTER_NEAREST)
+        head_count = 0
+        boxes = results.boxes
 
-        if self.frame_counter % self.skip_frames == 0 or not self.cached_boxes:
-            results = self.model.predict(
-                source=frame,
-                conf=self.conf_threshold,
-                classes=self.target_classes,
-                device=0,  # Forces inference onto NVIDIA RTX 2050 GPU
-                verbose=False,
-                imgsz=416
-            )[0]
+        if boxes is not None:
+            head_count = len(boxes)
 
-            self.cached_boxes = []
-            boxes = results.boxes
-            if boxes is not None and len(boxes) > 0:
-                for box in boxes:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    conf = float(box.conf[0])
-                    self.cached_boxes.append((x1, y1, x2, y2, conf))
+        status, status_color = self.classify_density(head_count)
 
-            self.cached_count = len(self.cached_boxes)
+        # 4. Draw detections on the frame
+        if boxes is not None:
+            for box in boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                conf = float(box.conf[0])
+                
+                # Draw bounding box
+                cv2.rectangle(resized_frame, (x1, y1), (x2, y2), status_color, 2)
+                cv2.putText(
+                    resized_frame,
+                    f"Head {conf:.2f}",
+                    (x1, max(y1 - 6, 12)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    status_color,
+                    1,
+                    cv2.LINE_AA
+                )
 
-        # Get density status & status color
-        status, color = self.get_density_status(self.cached_count)
+        # 5. Overlay Status Banner
+        cv2.rectangle(resized_frame, (10, 10), (280, 80), (20, 20, 20), -1)
+        cv2.rectangle(resized_frame, (10, 10), (280, 80), status_color, 2)
+        cv2.putText(resized_frame, f"Head Count: {head_count}", (20, 35),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+        cv2.putText(resized_frame, f"Status: {status}", (20, 58),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.60, status_color, 2)
+        cv2.putText(resized_frame, f"FPS: {self.fps_smoothed:.1f} (GPU)", (20, 75),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (180, 180, 180), 1)
 
-        # Draw cached detections on the frame
-        for (x1, y1, x2, y2, conf) in self.cached_boxes:
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            label = f"Person {conf:.2f}"
-            cv2.putText(
-                frame, label, (x1, max(y1 - 10, 15)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2
-            )
+        metrics = {
+            "count": head_count,
+            "status": status,
+            "fps": round(self.fps_smoothed, 1),
+            "inference_time_ms": round(inference_time_ms, 1)
+        }
 
-        # Overlay Top Status Banner
-        cv2.rectangle(frame, (0, 0), (frame.shape[1], 40), (0, 0, 0), -1)
-        status_text = f"Count: {self.cached_count} | Status: {status} | FPS: {self.fps:.1f}"
-        cv2.putText(
-            frame, status_text, (10, 28),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2
-        )
-
-        return frame, self.cached_count, self.fps, status
+        return resized_frame, metrics
