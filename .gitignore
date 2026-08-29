@@ -1,0 +1,16 @@
+# Virtual Environment
+venv/
+.venv/
+
+# Datasets (Do NOT push large image archives)
+dataset/
+*.zip
+
+# PyTorch Training Checkpoints and Runs
+runs/
+*.pt
+
+# Python Bytecode & Cache
+__pycache__/
+*.pyc
+.DS_Store

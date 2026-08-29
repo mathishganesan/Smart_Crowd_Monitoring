@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Crowd Monitoring Dashboard</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent-blue: #38bdf8;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            
+            --color-normal: #4ade80;
+            --color-warning: #facc15;
+            --color-danger: #f87171;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 25px;
+            border-bottom: 2px solid var(--card-bg);
+            padding-bottom: 15px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 2.2rem;
+            color: var(--accent-blue);
+        }
+
+        p.subtitle {
+            margin: 5px 0 0 0;
+            color: var(--text-muted);
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            transition: border-color 0.3s ease;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        .video-container img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .metric-card {
+            margin-bottom: 25px;
+            text-align: center;
+        }
+
+        .metric-title {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+        }
+
+        .metric-value {
+            font-size: 3.5rem;
+            font-weight: bold;
+            color: var(--color-normal);
+            margin: 10px 0;
+            transition: color 0.3s ease;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 1rem;
+            font-weight: 700;
+            background-color: rgba(74, 222, 128, 0.15);
+            color: var(--color-normal);
+            border: 2px solid var(--color-normal);
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+        }
+
+        /* Danger state alert animation */
+        .status-danger {
+            animation: pulse-red 1.2s infinite;
+        }
+
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.4); }
+            70% { box-shadow: 0 0 0 15px rgba(248, 113, 113, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Smart Crowd Monitoring System</h1>
+            <p class="subtitle">Real-Time YOLOv10 Neural Analytics & Density Monitoring</p>
+        </header>
+
+        <div class="dashboard-grid">
+            <!-- Left Side: Live Stream Feed -->
+            <div class="card">
+                <h2>Live Stream Feed</h2>
+                <div class="video-container">
+                    <img src="{{ url_for('video_feed') }}" alt="Live Monitoring Feed">
+                </div>
+            </div>
+
+            <!-- Right Side: Analytics & System Status -->
+            <div class="card" id="analytics-card">
+                <h2>Live Metrics</h2>
+                
+                <div class="metric-card">
+                    <div class="metric-title">Detected Person Count</div>
+                    <div class="metric-value" id="crowd-count">0</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-title">Crowd Density Status</div>
+                    <div style="margin-top: 15px;">
+                        <span class="status-badge" id="status-badge">● NORMAL</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        setInterval(() => {
+            fetch('/api/metrics')
+                .then(response => response.json())
+                .then(data => {
+                    const countElem = document.getElementById('crowd-count');
+                    const badgeElem = document.getElementById('status-badge');
+                    
+                    countElem.innerText = data.count;
+                    
+                    // Update theme styling based on status
+                    if (data.status === 'DANGER') {
+                        badgeElem.innerText = '● DANGER - OVERCROWDED';
+                        badgeElem.style.color = 'var(--color-danger)';
+                        badgeElem.style.borderColor = 'var(--color-danger)';
+                        badgeElem.style.backgroundColor = 'rgba(248, 113, 113, 0.15)';
+                        badgeElem.classList.add('status-danger');
+                        countElem.style.color = 'var(--color-danger)';
+                    } else if (data.status === 'WARNING') {
+                        badgeElem.innerText = '● WARNING - MODERATE';
+                        badgeElem.style.color = 'var(--color-warning)';
+                        badgeElem.style.borderColor = 'var(--color-warning)';
+                        badgeElem.style.backgroundColor = 'rgba(250, 204, 21, 0.15)';
+                        badgeElem.classList.remove('status-danger');
+                        countElem.style.color = 'var(--color-warning)';
+                    } else {
+                        badgeElem.innerText = '● NORMAL - SAFE';
+                        badgeElem.style.color = 'var(--color-normal)';
+                        badgeElem.style.borderColor = 'var(--color-normal)';
+                        badgeElem.style.backgroundColor = 'rgba(74, 222, 128, 0.15)';
+                        badgeElem.classList.remove('status-danger');
+                        countElem.style.color = 'var(--color-normal)';
+                    }
+                })
+                .catch(err => console.error("Error fetching metrics:", err));
+        }, 1000);
+    </script>
+</body>
+</html>
