@@ -1,21 +1,46 @@
 # Virtual Environment
 venv/
 .venv/
+env/
+.env
 
-# Datasets (Do NOT push large image archives)
+# Datasets (Do NOT push large image archives or caches)
 dataset/
 *.zip
+*.cache
+labels.cache
 
-# PyTorch Training Checkpoints and Runs
-runs/
-*.pt
-
-# Python Bytecode & Cache
+# Python Bytecode & OS Artifacts
 __pycache__/
 *.pyc
 .DS_Store
+Thumbs.db
 
+# Video Sources
+Sample_videos/
 Sample_video/
 *.mp4
 *.avi
 *.mkv
+*.mov
+
+# SQLite Database Files
+*.db
+crowd_monitoring.db
+
+# Model Checkpoints & Runs
+# Allow Git to traverse down to the specific weight file before ignoring other contents
+!runs/
+!runs/detect/
+!runs/detect/runs/
+!runs/detect/runs/detect/
+!runs/detect/runs/detect/yolov10_head_monitoring-6/
+!runs/detect/runs/detect/yolov10_head_monitoring-6/weights/
+runs/*
+!runs/detect/runs/detect/yolov10_head_monitoring-6/weights/best.pt
+*.pt
+!runs/detect/runs/detect/yolov10_head_monitoring-6/weights/best.pt
+
+# IDE Settings
+.vscode/
+.idea/

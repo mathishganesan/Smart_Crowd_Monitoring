@@ -4,239 +4,101 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart Crowd Monitoring System</title>
-    <style>
-        :root {
-            --bg-base: #0f172a;
-            --card-bg: #1e293b;
-            --text-main: #f8fafc;
-            --text-sub: #94a3b8;
-            --accent-blue: #38bdf8;
-            --normal: #22c55e;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-        }
-
-        body {
-            background-color: var(--bg-base);
-            color: var(--text-main);
-            padding: 24px;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 24px;
-        }
-
-        .header h1 {
-            font-size: 2rem;
-            color: var(--accent-blue);
-            margin-bottom: 6px;
-        }
-
-        .header p {
-            color: var(--text-sub);
-            font-size: 0.95rem;
-        }
-
-        .controls {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 20px;
-        }
-
-        .controls select {
-            background: var(--card-bg);
-            color: var(--text-main);
-            border: 1px solid #334155;
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 0.95rem;
-            outline: none;
-            cursor: pointer;
-        }
-
-        .grid-container {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 20px;
-            max-width: 1300px;
-            margin: 0 auto;
-        }
-
-        .card {
-            background-color: var(--card-bg);
-            border-radius: 12px;
-            padding: 20px;
-            border: 1px solid #334155;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-
-        .card h2 {
-            font-size: 1.15rem;
-            margin-bottom: 14px;
-            color: var(--text-main);
-        }
-
-        .video-box {
-            position: relative;
-            background: #000;
-            border-radius: 8px;
-            overflow: hidden;
-            border: 1px solid #334155;
-            min-height: 380px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .video-box img {
-            width: 100%;
-            height: auto;
-            display: block;
-        }
-
-        .stat-item {
-            margin-bottom: 18px;
-            padding: 14px;
-            background: #0f172a;
-            border-radius: 8px;
-            border-left: 4px solid var(--accent-blue);
-        }
-
-        .stat-label {
-            font-size: 0.8rem;
-            color: var(--text-sub);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .stat-value {
-            font-size: 2.2rem;
-            font-weight: 700;
-            color: var(--accent-blue);
-            margin-top: 4px;
-        }
-
-        .status-badge {
-            display: inline-block;
-            margin-top: 6px;
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-weight: 600;
-            font-size: 0.95rem;
-        }
-
-        .status-NORMAL {
-            background-color: rgba(34, 197, 94, 0.15);
-            color: var(--normal);
-            border: 1px solid var(--normal);
-        }
-
-        .status-WARNING {
-            background-color: rgba(245, 158, 11, 0.15);
-            color: var(--warning);
-            border: 1px solid var(--warning);
-        }
-
-        .status-DANGER {
-            background-color: rgba(239, 68, 68, 0.15);
-            color: var(--danger);
-            border: 1px solid var(--danger);
-        }
-
-        @media (max-width: 900px) {
-            .grid-container {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
+    <!-- Lightweight Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="header">
-        <h1>Smart Crowd Monitoring System</h1>
-        <p>Real-Time YOLOv10 Neural Head Analytics & Density Monitoring</p>
-    </div>
 
-    <div class="controls">
-        <label for="videoSelect" style="color: var(--text-sub); font-size: 0.9rem;">Select Video Feed:</label>
-        <select id="videoSelect" onchange="changeSource(this.value)">
-            <option value="webcam">Live Webcam</option>
-            {% for video in videos %}
-                <option value="{{ video }}" {% if video == current_video %}selected{% endif %}>{{ video }}</option>
-            {% endfor %}
-        </select>
-    </div>
-
-    <div class="grid-container">
-        <!-- Live Video Panel -->
-        <div class="card">
-            <h2>Active Stream Feed</h2>
-            <div class="video-box">
-                <img id="streamImg" src="{{ url_for('video_feed') }}" alt="Live Feed">
+    <!-- Top Navigation Header -->
+    <header class="navbar">
+        <div class="nav-container">
+            <h1 class="brand-title">Smart Crowd Monitoring System</h1>
+            
+            <div class="source-wrapper">
+                <label for="videoSource">Video Source:</label>
+                <select id="videoSource">
+                    {% for v in videos %}
+                        <option value="{{ v }}" {% if v == current_video %}selected{% endif %}>{{ v }}</option>
+                    {% endfor %}
+                    <option value="webcam" {% if current_video == 'webcam' %}selected{% endif %}>Live Webcam</option>
+                </select>
+                <div class="source-wrapper">
+    <label for="videoSource">Video Source:</label>
+    <!-- Add this export button -->
+    <button type="button" id="exportBtn" style="margin-left: 8px; font-size: 0.82rem; padding: 6px 12px; background: #0f172a; color: #fff; border: none; border-radius: 6px; cursor: pointer;">Export CSV</button>
+</div>
             </div>
         </div>
+    </header>
 
-        <!-- Telemetry & Metrics Panel -->
-        <div class="card">
-            <h2>Real-Time Metrics</h2>
+    <!-- Main Container -->
+    <main class="main-container">
+        
+        <!-- Left Side: Live Surveillance Feed -->
+        <section class="card video-card">
+            <div class="card-header">
+                <h2>Live Surveillance Stream</h2>
+                <span class="status-tag" id="streamTag">Connected</span>
+            </div>
+            <div class="video-container">
+                <img id="streamImg" src="{{ url_for('video_feed') }}" alt="Surveillance Stream">
+            </div>
+        </section>
 
-            <div class="stat-item">
-                <div class="stat-label">Detected Head Count</div>
-                <div class="stat-value" id="headCount">0</div>
+        <!-- Right Side: Metrics Panel & Sidebar -->
+        <aside class="sidebar">
+            
+            <!-- Detected Count Card -->
+            <div class="card count-card">
+                <h3>Detected Head Count</h3>
+                <div class="count-number" id="countValue">0</div>
+                <p class="count-subtext">Active count from YOLOv10 engine</p>
             </div>
 
-            <div class="stat-item">
-                <div class="stat-label">Density Classification</div>
-                <div id="statusBadge" class="status-badge status-NORMAL">NORMAL - SAFE</div>
-            </div>
-
-            <div class="stat-item">
-                <div class="stat-label">Inference Processing Speed</div>
-                <div style="font-size: 1.1rem; color: var(--text-main); margin-top: 4px;">
-                    <span id="fpsVal">0.0</span> FPS | <span id="latVal">0.0</span> ms latency
+            <!-- Crowd Level Status Card -->
+            <div class="card status-card">
+                <h3>Current Density Status</h3>
+                <div class="density-badge badge-normal" id="statusBadge">NORMAL</div>
+                <div class="density-scale">
+                    <span>Safe (&lt;5)</span>
+                    <span>Warning (5–12)</span>
+                    <span>Danger (&gt;12)</span>
                 </div>
             </div>
-        </div>
-    </div>
 
-    <script>
-        function changeSource(selectedSource) {
-            fetch('/api/set_source', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ source: selectedSource })
-            }).then(() => {
-                // Refresh stream source connection
-                const streamImg = document.getElementById('streamImg');
-                streamImg.src = "{{ url_for('video_feed') }}?t=" + new Date().getTime();
-            });
-        }
+            <!-- Performance Metrics -->
+            <div class="card metrics-card">
+                <h3>System Performance</h3>
+                <div class="perf-row">
+                    <span>Throughput:</span>
+                    <strong><span id="fpsValue">0.0</span> FPS</strong>
+                </div>
+                <div class="perf-row">
+                    <span>Inference Latency:</span>
+                    <strong><span id="latencyValue">0.0</span> ms</strong>
+                </div>
+                <div class="perf-row">
+                    <span>Compute Device:</span>
+                    <strong>NVIDIA RTX 2050 (GPU)</strong>
+                </div>
+            </div>
 
-        function updateMetrics() {
-            fetch('/api/metrics')
-                .then(res => res.json())
-                .then(data => {
-                    document.getElementById('headCount').innerText = data.count;
-                    document.getElementById('fpsVal').innerText = data.fps;
-                    document.getElementById('latVal').innerText = data.inference_time_ms;
+            <!-- Real-Time Density Chart (Directly below System Performance) -->
+            <div class="card chart-card">
+                <div class="card-header">
+                    <h3>Density Trend</h3>
+                    <span class="chart-legend-text">Last 30s</span>
+                </div>
+                <div class="chart-wrapper">
+                    <canvas id="crowdChart"></canvas>
+                </div>
+            </div>
 
-                    const badge = document.getElementById('statusBadge');
-                    badge.className = 'status-badge status-' + data.status;
-                    badge.innerText = data.status + (data.status === 'NORMAL' ? ' - SAFE' : (data.status === 'WARNING' ? ' - MODERATE' : ' - SURGE DETECTED'));
-                })
-                .catch(err => console.error("Telemetry fetch error:", err));
-        }
+        </aside>
 
-        setInterval(updateMetrics, 500);
-    </script>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

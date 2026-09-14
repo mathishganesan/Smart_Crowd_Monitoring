@@ -1,0 +1,36 @@
+SCUT-HEAD DATASET STATISTICAL ANALYSIS
+============================================================
+
+Total images analyzed : 4,390
+Total annotated heads : 109,776
+
+CENTER OF DATA
+------------------------------
+Mean heads/image      : 25.01
+Median heads/image    : 14.00
+
+SPREAD
+------------------------------
+Minimum               : 0
+Maximum               : 162
+Standard deviation    : 25.97
+Variance              : 674.47
+Q1                    : 6.00
+Q3                    : 34.00
+IQR                   : 28.00
+
+SKEWNESS
+------------------------------
+Skewness              : 1.2304
+
+OUTLIERS
+------------------------------
+Lower boundary       : -36.00
+Upper boundary       : 76.00
+Outlier images       : 340
+
+CORRELATION
+------------------------------
+Head count vs average head area
+Pearson r            : -0.3331
+P-value              : 0.000000
