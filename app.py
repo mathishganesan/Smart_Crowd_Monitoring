@@ -19,12 +19,15 @@ app = Flask(__name__)
 # Initialize SQLite database schema
 init_db()
 
+# Resolve correct model weights path with safety fallback
+primary_weights = r"runs/detect/yolov10_scut_ab_combined/weights/best.pt"
+fallback_weights = r"runs/detect/runs/detect/yolov10_head_monitoring-6/weights/best.pt"
+
+selected_model_path = primary_weights if os.path.exists(primary_weights) else fallback_weights
+print(f"[INFO] Initializing CrowdDetector with model weights: {selected_model_path}")
+
 # Initialize custom detector with fine-tuned weights
-# If detector.py only takes model_path:
-detector = CrowdDetector(
-    model_path=r"runs/detect/yolov10_scut_ab_combined/weights/best.pt"
-)
-# If thresholds are attributes:
+detector = CrowdDetector(model_path=selected_model_path)
 detector.conf = 0.15
 detector.warning_limit = 5
 detector.danger_limit = 12
@@ -84,6 +87,11 @@ else:
 def generate_frames():
     global latest_metrics, camera, current_source, last_db_log_time, last_logged_status
     while True:
+        frame = None
+        is_webcam = False
+        active_source = "unknown"
+
+        # 1. Fetch frame inside lock and release immediately
         with video_lock:
             if camera is None or not camera.isOpened():
                 time.sleep(0.01)
@@ -97,16 +105,18 @@ def generate_frames():
                     time.sleep(0.01)
                     continue
 
-        if not success or frame is None:
-            time.sleep(0.01)
-            continue
+            if not success or frame is None:
+                time.sleep(0.01)
+                continue
 
-        # Adjust thresholds adaptively based on feed source
-        is_webcam = (current_source == "webcam")
+            is_webcam = (current_source == "webcam")
+            active_source = current_source if current_source else "unknown"
+
+        # 2. Run inference OUTSIDE video_lock (prevents pipeline starvation)
         processed_frame, metrics = detector.process_frame(frame, is_webcam=is_webcam)
         latest_metrics = metrics
 
-        # Periodic SQLite logging directly every 2 seconds
+        # 3. Periodic SQLite logging directly every 2 seconds
         curr_t = time.time()
         if curr_t - last_db_log_time >= 2.0:
             last_db_log_time = curr_t
@@ -114,18 +124,18 @@ def generate_frames():
             st = metrics.get("status", "NORMAL")
             fps = metrics.get("fps", 0.0)
             lat = metrics.get("inference_time_ms", 0.0)
-            src = current_source if current_source else "unknown"
 
             # Insert time-series crowd telemetry
-            log_crowd_record(src, cnt, st, fps, lat)
+            log_crowd_record(active_source, cnt, st, fps, lat)
 
             # Log incident alert on risk status escalation
             if st in ("WARNING", "DANGER") and st != last_logged_status:
-                log_alert_event(src, st, cnt, f"Crowd density threshold reached: {cnt} people detected.")
+                log_alert_event(active_source, st, cnt, f"Crowd density threshold reached: {cnt} people detected.")
                 last_logged_status = st
             elif st == "NORMAL":
                 last_logged_status = "NORMAL"
 
+        # 4. Stream frame as JPEG
         ret, buffer = cv2.imencode('.jpg', processed_frame)
         if not ret:
             continue
