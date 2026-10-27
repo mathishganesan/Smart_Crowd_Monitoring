@@ -1,4 +1,4 @@
-(() => {
+document.addEventListener('DOMContentLoaded', () => {
     'use strict';
 
     const videoSource = document.getElementById('videoSource');
@@ -13,44 +13,49 @@
     const initialLabels = Array(MAX_DATA_POINTS).fill('');
     const initialData = Array(MAX_DATA_POINTS).fill(0);
 
-    const ctx = document.getElementById('crowdChart').getContext('2d');
-    const crowdChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: initialLabels,
-            datasets: [{
-                label: 'Detected Head Count',
-                data: initialData,
-                borderColor: '#2563eb',
-                backgroundColor: 'rgba(37, 99, 235, 0.08)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.25,
-                pointRadius: 2,
-                pointBackgroundColor: '#2563eb'
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    suggestedMax: 20,
-                    grid: { color: '#f1f5f9' },
-                    ticks: { precision: 0, font: { size: 11 } }
-                },
-                x: {
-                    grid: { display: false },
-                    ticks: { display: false }
-                }
+    const chartCanvas = document.getElementById('crowdChart');
+    let crowdChart = null;
+
+    if (chartCanvas) {
+        const ctx = chartCanvas.getContext('2d');
+        crowdChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: initialLabels,
+                datasets: [{
+                    label: 'Detected Head Count',
+                    data: initialData,
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.25,
+                    pointRadius: 2,
+                    pointBackgroundColor: '#2563eb'
+                }]
             },
-            plugins: {
-                legend: { display: false }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        suggestedMax: 20,
+                        grid: { color: '#f1f5f9' },
+                        ticks: { precision: 0, font: { size: 11 } }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { display: false }
+                    }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
             }
-        }
-    });
+        });
+    }
 
     let lastChartUpdate = Date.now();
 
@@ -61,26 +66,30 @@
             if (!res.ok) return;
             const data = await res.json();
 
-            const count = data.count ?? 0;
+            // Support both 'count' and 'head_count'
+            const count = data.count ?? data.head_count ?? 0;
             const status = data.status || 'NORMAL';
             const fps = Number(data.fps ?? 0).toFixed(1);
-            const latency = Number(data.inference_time_ms ?? 0).toFixed(1);
+            // Support both 'inference_time_ms' and 'latency_ms' or 'latency'
+            const latency = Number(data.inference_time_ms ?? data.latency_ms ?? data.latency ?? 0).toFixed(1);
 
-            // Update numerical values
-            countValue.innerText = count;
-            fpsValue.innerText = fps;
-            latencyValue.innerText = latency;
+            // Update numerical values in DOM
+            if (countValue) countValue.innerText = count;
+            if (fpsValue) fpsValue.innerText = fps;
+            if (latencyValue) latencyValue.innerText = latency;
 
             // Update status badge
-            statusBadge.innerText = status;
-            statusBadge.className = 'density-badge ' + (
-                status === 'DANGER' ? 'badge-danger' : 
-                (status === 'WARNING' ? 'badge-warning' : 'badge-normal')
-            );
+            if (statusBadge) {
+                statusBadge.innerText = status;
+                statusBadge.className = 'density-badge ' + (
+                    status === 'DANGER' ? 'badge-danger' : 
+                    (status === 'WARNING' ? 'badge-warning' : 'badge-normal')
+                );
+            }
 
             // Update chart once every second
             const now = Date.now();
-            if (now - lastChartUpdate >= 1000) {
+            if (crowdChart && (now - lastChartUpdate >= 1000)) {
                 crowdChart.data.labels.push('');
                 crowdChart.data.labels.shift();
 
@@ -115,61 +124,131 @@
     updateMetrics();
 
     // Handle dropdown video switching
-    videoSource.addEventListener('change', async (e) => {
-        const source = e.target.value;
-        videoSource.disabled = true;
+    if (videoSource) {
+        videoSource.addEventListener('change', async (e) => {
+            const source = e.target.value;
+            videoSource.disabled = true;
 
-        try {
-            await fetch('/api/set_source', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ source })
-            });
+            try {
+                const res = await fetch('/api/set_source', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source })
+                });
 
-            // Reconnect stream
-            const base = streamImg.src.split('?')[0];
-            streamImg.src = `${base}?t=${Date.now()}`;
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    setTimeout(() => {
+                        if (streamImg) {
+                            const base = streamImg.src.split('?')[0];
+                            streamImg.src = `${base}?t=${Date.now()}`;
+                        }
+                    }, 100);
 
-            // Reset chart dataset for clean video transition
-            crowdChart.data.datasets[0].data = Array(MAX_DATA_POINTS).fill(0);
-            crowdChart.update();
-        } catch (err) {
-            console.error("Failed to switch video:", err);
-        } finally {
-            videoSource.disabled = false;
-        }
-    });
-})();
-
-// Reliable CSV Blob Exporter
-const exportBtn = document.getElementById('exportBtn');
-if (exportBtn) {
-    exportBtn.addEventListener('click', async () => {
-        exportBtn.innerText = 'Exporting...';
-        exportBtn.disabled = true;
-
-        try {
-            const response = await fetch('/api/export_logs', { cache: 'no-store' });
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                    if (crowdChart) {
+                        crowdChart.data.datasets[0].data = Array(MAX_DATA_POINTS).fill(0);
+                        crowdChart.update();
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to switch video:", err);
+            } finally {
+                videoSource.disabled = false;
             }
+        });
+    }
 
-            const blob = await response.blob();
-            const downloadUrl = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = downloadUrl;
-            a.download = `crowd_telemetry_logs_${Date.now()}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(downloadUrl);
-            a.remove();
-        } catch (err) {
-            console.error('Export failed:', err);
-            alert('Failed to download logs. Check server terminal.');
-        } finally {
-            exportBtn.innerText = 'Export CSV';
-            exportBtn.disabled = false;
-        }
-    });
-}
+    // CSV Blob Exporter
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) {
+        exportBtn.addEventListener('click', async () => {
+            exportBtn.innerText = 'Exporting...';
+            exportBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/export_logs', { cache: 'no-store' });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = downloadUrl;
+                a.download = `crowd_telemetry_logs_${Date.now()}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(downloadUrl);
+                a.remove();
+            } catch (err) {
+                console.error('Export failed:', err);
+                alert('Failed to download logs.');
+            } finally {
+                exportBtn.innerText = 'Export CSV';
+                exportBtn.disabled = false;
+            }
+        });
+    }
+
+    // Video Upload Handler
+    const uploadBtn = document.getElementById('uploadBtn');
+    const videoFileInput = document.getElementById('videoFileInput');
+
+    if (uploadBtn && videoFileInput) {
+        uploadBtn.addEventListener('click', () => {
+            videoFileInput.click();
+        });
+
+        videoFileInput.addEventListener('change', async (e) => {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+
+            const file = files[0];
+            const formData = new FormData();
+            formData.append('video', file);
+
+            const originalText = uploadBtn.innerText;
+            uploadBtn.innerText = '⏳ Uploading...';
+            uploadBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/upload_video', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    if (videoSource) {
+                        let exists = false;
+                        for (let i = 0; i < videoSource.options.length; i++) {
+                            if (videoSource.options[i].value === data.filename) {
+                                exists = true;
+                                videoSource.selectedIndex = i;
+                                break;
+                            }
+                        }
+                        if (!exists) {
+                            const newOpt = new Option(data.filename, data.filename, true, true);
+                            videoSource.add(newOpt);
+                        }
+                    }
+
+                    if (streamImg) {
+                        const base = streamImg.src.split('?')[0];
+                        streamImg.src = `${base}?t=${Date.now()}`;
+                    }
+                } else {
+                    alert('Upload failed: ' + (data.message || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error('Upload error:', err);
+                alert('Error uploading video.');
+            } finally {
+                uploadBtn.innerText = originalText;
+                uploadBtn.disabled = false;
+                videoFileInput.value = '';
+            }
+        });
+    }
+});

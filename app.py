@@ -5,6 +5,7 @@ import threading
 import io
 import csv
 from flask import Flask, render_template, Response, jsonify, request
+from werkzeug.utils import secure_filename
 from detector import CrowdDetector
 from database.database import (
     init_db,
@@ -15,6 +16,9 @@ from database.database import (
 )
 
 app = Flask(__name__)
+
+# Enforce a 500MB max payload limit to protect system memory during guide file transfers
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 
 # Initialize SQLite database schema
 init_db()
@@ -32,8 +36,10 @@ detector.conf = 0.15
 detector.warning_limit = 5
 detector.danger_limit = 12
 
-# Folder containing downloaded clips
+# Folder containing surveillance clips
 VIDEO_DIR = "Sample_videos"
+ALLOWED_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv', '.webm', '.m4v'}
+os.makedirs(VIDEO_DIR, exist_ok=True)
 
 # Global camera, video state, and telemetry tracking
 camera = None
@@ -45,37 +51,47 @@ latest_metrics = {"count": 0, "status": "NORMAL", "fps": 0.0, "inference_time_ms
 last_db_log_time = 0.0
 last_logged_status = "NORMAL"
 
+def allowed_file(filename):
+    """Checks whether the uploaded file matches supported video extensions."""
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in ALLOWED_EXTENSIONS
+
 def get_available_videos():
     """Lists video files inside Sample_videos folder."""
     if not os.path.exists(VIDEO_DIR):
         return []
-    valid_exts = ('.mp4', '.avi', '.mov', '.mkv', '.webm', '.m4v')
-    return [f for f in os.listdir(VIDEO_DIR) if f.lower().endswith(valid_exts)]
+    return [f for f in os.listdir(VIDEO_DIR) if os.path.splitext(f)[1].lower() in ALLOWED_EXTENSIONS]
 
 def set_video_source(source_name):
     """Safely updates the active video capture stream and registers source in DB."""
     global camera, current_source
     with video_lock:
-        if camera is not None:
-            camera.release()
+        try:
+            if camera is not None:
+                camera.release()
+                camera = None
 
-        if source_name == "webcam":
-            print("[INFO] Switching feed to: Live Webcam (Index 0)")
-            camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-            current_source = "webcam"
-        else:
-            video_path = os.path.join(VIDEO_DIR, source_name)
-            if os.path.exists(video_path):
-                print(f"[INFO] Ingesting video stream from: {video_path}")
-                camera = cv2.VideoCapture(video_path)
-                current_source = source_name
-            else:
-                print(f"[WARNING] Video {video_path} not found. Defaulting to webcam.")
+            time.sleep(0.05)  # Allow OS driver to clean up file/device handles
+
+            if source_name == "webcam":
+                print("[INFO] Switching feed to: Live Webcam (Index 0)")
                 camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
                 current_source = "webcam"
+            else:
+                video_path = os.path.join(VIDEO_DIR, source_name)
+                if os.path.exists(video_path):
+                    print(f"[INFO] Ingesting video stream from: {video_path}")
+                    camera = cv2.VideoCapture(video_path)
+                    current_source = source_name
+                else:
+                    print(f"[WARNING] Video {video_path} not found. Defaulting to webcam.")
+                    camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+                    current_source = "webcam"
 
-        # Index the active camera/source in the database
-        register_camera_source(current_source)
+            # Index the active camera/source in the database
+            register_camera_source(current_source)
+        except Exception as e:
+            print(f"[ERROR] Exception in set_video_source: {e}")
 
 # Auto-select the first available video on startup
 initial_videos = get_available_videos()
@@ -94,27 +110,33 @@ def generate_frames():
         # 1. Fetch frame inside lock and release immediately
         with video_lock:
             if camera is None or not camera.isOpened():
-                time.sleep(0.01)
+                time.sleep(0.05)
                 continue
+            
             success, frame = camera.read()
 
+            # Continuous auto-looping for recorded benchmark videos
             if not success and current_source != "webcam":
                 camera.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 success, frame = camera.read()
                 if not success:
-                    time.sleep(0.01)
+                    time.sleep(0.05)
                     continue
 
             if not success or frame is None:
-                time.sleep(0.01)
+                time.sleep(0.02)
                 continue
 
             is_webcam = (current_source == "webcam")
             active_source = current_source if current_source else "unknown"
 
         # 2. Run inference OUTSIDE video_lock (prevents pipeline starvation)
-        processed_frame, metrics = detector.process_frame(frame, is_webcam=is_webcam)
-        latest_metrics = metrics
+        try:
+            processed_frame, metrics = detector.process_frame(frame, is_webcam=is_webcam)
+            latest_metrics = metrics
+        except Exception as e:
+            print(f"[ERROR] Detection failed on frame: {e}")
+            continue
 
         # 3. Periodic SQLite logging directly every 2 seconds
         curr_t = time.time()
@@ -125,15 +147,15 @@ def generate_frames():
             fps = metrics.get("fps", 0.0)
             lat = metrics.get("inference_time_ms", 0.0)
 
-            # Insert time-series crowd telemetry
-            log_crowd_record(active_source, cnt, st, fps, lat)
-
-            # Log incident alert on risk status escalation
-            if st in ("WARNING", "DANGER") and st != last_logged_status:
-                log_alert_event(active_source, st, cnt, f"Crowd density threshold reached: {cnt} people detected.")
-                last_logged_status = st
-            elif st == "NORMAL":
-                last_logged_status = "NORMAL"
+            try:
+                log_crowd_record(active_source, cnt, st, fps, lat)
+                if st in ("WARNING", "DANGER") and st != last_logged_status:
+                    log_alert_event(active_source, st, cnt, f"Crowd density threshold reached: {cnt} people detected.")
+                    last_logged_status = st
+                elif st == "NORMAL":
+                    last_logged_status = "NORMAL"
+            except Exception as e:
+                print(f"[DB LOG ERROR] {e}")
 
         # 4. Stream frame as JPEG
         ret, buffer = cv2.imencode('.jpg', processed_frame)
@@ -162,6 +184,32 @@ def update_source():
     source = data.get('source', 'webcam')
     set_video_source(source)
     return jsonify({"status": "success", "active_source": source})
+
+@app.route('/api/upload_video', methods=['POST'])
+def upload_video():
+    """Handles runtime video uploads for independent guide evaluation."""
+    if 'video' not in request.files:
+        return jsonify({"status": "error", "message": "No video file attached."}), 400
+        
+    file = request.files['video']
+    if file.filename == '':
+        return jsonify({"status": "error", "message": "No file selected."}), 400
+
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        save_path = os.path.join(VIDEO_DIR, filename)
+        file.save(save_path)
+
+        # Switch camera source immediately to the newly received file
+        set_video_source(filename)
+        print(f"[INFO] New guide evaluation video uploaded and loaded: {filename}")
+        return jsonify({
+            "status": "success",
+            "message": f"Successfully loaded {filename}",
+            "filename": filename
+        })
+
+    return jsonify({"status": "error", "message": "Unsupported file format. Provide an MP4, AVI, MOV, or MKV file."}), 400
 
 @app.route('/api/export_logs')
 def export_logs():

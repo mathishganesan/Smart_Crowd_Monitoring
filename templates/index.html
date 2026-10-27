@@ -9,29 +9,37 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-
-    <!-- Top Navigation Header -->
+<!-- Top Navigation Header -->
     <header class="navbar">
         <div class="nav-container">
             <h1 class="brand-title">Smart Crowd Monitoring System</h1>
             
-            <div class="source-wrapper">
-                <label for="videoSource">Video Source:</label>
-                <select id="videoSource">
-                    {% for v in videos %}
-                        <option value="{{ v }}" {% if v == current_video %}selected{% endif %}>{{ v }}</option>
-                    {% endfor %}
+            <div class="source-wrapper d-flex align-items-center gap-2">
+                <label for="videoSource" style="margin-bottom: 0; font-weight: 500;">Video Source:</label>
+                
+                <!-- Video Selection Dropdown matching main.js (id="videoSource", NO inline onchange) -->
+                <select id="videoSource" class="form-select form-select-sm" style="width: auto;">
                     <option value="webcam" {% if current_video == 'webcam' %}selected{% endif %}>Live Webcam</option>
+                    {% for vid in videos %}
+                        <option value="{{ vid }}" {% if current_video == vid %}selected{% endif %}>{{ vid }}</option>
+                    {% endfor %}
                 </select>
-                <div class="source-wrapper">
-    <label for="videoSource">Video Source:</label>
-    <!-- Add this export button -->
-    <button type="button" id="exportBtn" style="margin-left: 8px; font-size: 0.82rem; padding: 6px 12px; background: #0f172a; color: #fff; border: none; border-radius: 6px; cursor: pointer;">Export CSV</button>
-</div>
+
+                <!-- Hidden Native File Input -->
+                <input type="file" id="videoFileInput" accept=".mp4,.avi,.mov,.mkv,.webm" style="display: none;">
+
+                <!-- Trigger Button for Guide Video -->
+                <button type="button" class="btn btn-outline-primary btn-sm text-nowrap" id="uploadBtn">
+                    📁 Upload Video
+                </button>
+
+                <!-- Telemetry CSV Export Button -->
+                <button type="button" id="exportBtn" style="font-size: 0.82rem; padding: 6px 12px; background: #0f172a; color: #fff; border: none; border-radius: 6px; cursor: pointer;">
+                    Export CSV
+                </button>
             </div>
         </div>
     </header>
-
     <!-- Main Container -->
     <main class="main-container">
         
